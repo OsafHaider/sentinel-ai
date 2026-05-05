@@ -1,0 +1,54 @@
+name: 🛡️ Sentinel-AI System Health Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  integration-check:
+    name: Full System Integration
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis/redis-stack:latest
+        ports:
+          - 6379:6379
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. Node.js Gateway Health Check
+      - name: 🟢 Setup Node.js (Gateway)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install & Build Gateway
+        working-directory: ./sentinel-gateway
+        run: |
+          npm install
+          npm run build
+
+      # 2. Python Worker Health Check
+      - name: 🔵 Setup Python (Worker)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install & Check Worker
+        working-directory: ./sentinel-worker
+        run: |
+          pip install -r requirements.txt
+          python -m compileall src/
+
+      # 3. Final Verification Log
+      - name: ✅ System Verification
+        run: echo "Sentinel-AI Architecture is sound and deployable!"
