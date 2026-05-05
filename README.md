@@ -472,9 +472,8 @@ MIT License - Build something amazing with Sentinel-AI!
 
 ## 🙋 Questions?
 
-- 📧 Email: [your-email@example.com]
-- 💼 LinkedIn: [your-profile]
-- 🐙 GitHub Issues: [Project Issues]
+- 📧 Email: osafh486@gmail.com
+- 💼 LinkedIn: https://www.linkedin.com/in/osaf-haiider/
 
 ---
 
