@@ -1,0 +1,44 @@
+graph TD
+    User((User)) -->|1. Query| RL[Redis Sliding Window Rate Limiter]
+    RL -->|Allowed| Gateway[Fastify Gateway]
+    RL -->|Blocked| 429[Error: 429 Too Many Requests]
+
+    Gateway -->|2. Generate Embedding| Cache{3. Semantic Cache: Redis Stack}
+    
+    Cache -->|3a. < 0.15 Score Match| Return[Return Response - 11ms]
+    Cache -->|3b. Score Miss| Queue[BullMQ Task Queue]
+    
+    Queue -->|4. Semaphore 1 Control| Worker[Python AI Worker]
+    
+    Worker --> RAG{5. Mongo Vector Search}
+    
+    RAG -->|5a. Context Found| Hash{6. Context Hash Check}
+    RAG -->|5b. No Context| LLM[7. Groq LLM Inference]
+    
+    Hash -->|New Hash| Hydrate[Proactive Hydration]
+    Hash -->|Existing Hash| LLM
+    
+    LLM -->|8. Retry Logic/Backoff| Webhook[9. Webhook: /v1/webhook/result]
+    
+    Webhook -->|10. should_cache=True| Update[Update Redis Cache + Stats]
+    Webhook -->|Final Delivery| User
+
+    %% Styles
+    classDef user fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px;
+    classDef gateway fill:#E8F5E9,stroke:#43A047,stroke-width:2px;
+    classDef cache fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px;
+    classDef queue fill:#F3E5F5,stroke:#8E24AA,stroke-width:2px;
+    classDef worker fill:#E0F7FA,stroke:#00ACC1,stroke-width:2px;
+    classDef decision fill:#FCE4EC,stroke:#D81B60,stroke-width:2px;
+    classDef llm fill:#EDE7F6,stroke:#5E35B1,stroke-width:2px;
+    classDef error fill:#FFEBEE,stroke:#E53935,stroke-width:2px;
+
+    %% Apply classes
+    class User user;
+    class Gateway,RL,Webhook,Update gateway;
+    class Cache cache;
+    class Queue queue;
+    class Worker,Hydrate worker;
+    class Hash,RAG decision;
+    class LLM llm;
+    class 429 error;
