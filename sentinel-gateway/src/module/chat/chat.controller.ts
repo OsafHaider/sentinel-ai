@@ -1,8 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { checkCache, initRedis, isRateLimited, setCache } from '../../lib/redis.js';
 import { performance } from 'perf_hooks';
 import { addChatTask, chatQueue } from '../../queue/task-queue.js';
 import { embeddingService } from '../../services/embeddingService.js';
-import { checkCache, initRedis, isRateLimited, setCache } from '../../lib/redis.js';
 
 export const chatController = {
   // POST /v1/chat
