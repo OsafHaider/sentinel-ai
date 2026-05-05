@@ -34,7 +34,7 @@ jobs:
       - name: Install & Build Gateway
         working-directory: ./sentinel-gateway
         run: |
-          npm install
+          npm install --ignore-scripts
           npm run build
 
       # 2. Python Worker Health Check
