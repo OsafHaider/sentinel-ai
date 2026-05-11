@@ -14,5 +14,8 @@ function getEnvVariable(key: string): string {
 export const env = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: parseInt(process.env.PORT || "8008", 10),
-  REDIS_URL: getEnvVariable("REDIS_URL")
+  REDIS_URL: getEnvVariable("REDIS_URL"),
+  MONGO_URI: getEnvVariable("MONGO_URI"),
+  MONGO_DB_NAME: getEnvVariable("MONGO_DB_NAME"),
+  CLIENT_URL: getEnvVariable("CLIENT_URL"),
 };

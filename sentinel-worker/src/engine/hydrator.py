@@ -1,10 +1,9 @@
-import os
 import json
 import logging
 import re
 import asyncio
 from groq import AsyncGroq
-
+from src.config.env import get_env_variable
 logger = logging.getLogger(__name__)
 
 rate_limit_sem = asyncio.Semaphore(1)
@@ -12,7 +11,7 @@ rate_limit_sem = asyncio.Semaphore(1)
 
 class SentinelHydrator:
     def __init__(self, embedding_model, redis_client):
-        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+        self.client = AsyncGroq(api_key=get_env_variable("GROQ_API_KEY"))
         self.model = "llama-3.1-8b-instant"
         self.embedding_model = embedding_model
         self.redis = redis_client

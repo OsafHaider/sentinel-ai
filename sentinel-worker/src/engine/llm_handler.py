@@ -1,45 +1,75 @@
-import os
-from groq import AsyncGroq # 👈 Elite Move: Async use karo
 from dotenv import load_dotenv
-
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from src.config.env import get_env_variable
 load_dotenv()
 
-class LLMHandler:
-    def __init__(self):
-        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-        self.model = "llama-3.1-8b-instant"
+# 1. Model Initialize (Global)
+llm = ChatGroq(
+    api_key=get_env_variable("GROQ_API_KEY"), model="llama-3.1-8b-instant", temperature=0.1
+)
 
-    async def generate_response(self, query, context=""):
-        system_instruction = (
-            "You are Sentinel-AI, a strictly factual assistant. "
-            "Your task is to answer user queries using ONLY the provided context. "
-            "\n\nRULES:\n"
-            "1. If relevant context is provided, answer using only that info.\n"
-            "2. If NO context is provided or it's irrelevant, politely say: "
-            "'I am sorry, but I do not have this information in my private knowledge base.'\n"
-            "3. DO NOT use your internal training data to answer private queries.\n"
-            "4. Be concise and professional."
-        )
+# ---------------------------------------------------------
+# CASE 1: Private Knowledge Chain (Strict RAG)
+# ---------------------------------------------------------
+private_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            (
+                "You are Sentinel-AI (Private Mode). You are a strictly factual assistant. "
+                "Answer using ONLY the provided context.\n\n"
+                "RULES:\n"
+                "1. Use provided context only.\n"
+                "2. If context is irrelevant or missing, say: 'I am sorry, but I do not have this information in my private knowledge base.'\n"
+                "3. Do not use your internal training data for this response."
+            ),
+        ),
+        ("user", "Context:\n{context}\n\nQuestion: {query}"),
+    ]
+)
 
-        if context:
-            prompt = f"Context:\n{context}\n\nQuestion: {query}"
+private_chain = private_prompt | llm | StrOutputParser()
+
+# ---------------------------------------------------------
+# CASE 2: Generic Knowledge Chain (Open Mode)
+# ---------------------------------------------------------
+generic_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            (
+                "You are Sentinel-AI (General Mode). You are a helpful and knowledgeable assistant. "
+                "Answer the user's question clearly using your general knowledge."
+            ),
+        ),
+        ("user", "{query}"),
+    ]
+)
+
+generic_chain = generic_prompt | llm | StrOutputParser()
+
+
+# ---------------------------------------------------------
+# Main Router Function
+# ---------------------------------------------------------
+async def generate_response(query, context=None, mode="generic"):
+    """
+    Decides which chain to use based on the 'mode' passed by the worker.
+    """
+    try:
+        if mode == "private":
+            # Strict mode: Sirf provide kiya gaya context use hoga
+            print(f"🛡️ [LLM-ROUTER] Routing to Private Chain for: {query[:30]}...")
+            response = await private_chain.ainvoke({"context": context, "query": query})
+            return response
         else:
-            prompt = f"Question: {query}\n(Note: No private context found for this query.)"
+            # Generic mode: LLM apni general knowledge use karega
+            print(f"🌍 [LLM-ROUTER] Routing to Generic Chain for: {query[:30]}...")
+            response = await generic_chain.ainvoke({"query": query})
+            return response
 
-        try:
-            completion = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
-            
-            return completion.choices[0].message.content
-            
-        except Exception as e:
-            return f"LLM Error: {str(e)}"
-
-# Singleton instance
-llm_handler = LLMHandler()
+    except Exception as e:
+        print(f"🔥 [LLM-ERROR]: {str(e)}")
+        return f"Sentinel LLM Error: {str(e)}"
