@@ -1,35 +1,48 @@
 import { env } from "../config/env.js";
 import { createClient } from "redis";
+import { logger } from "../config/logger.js";
+
+/**
+ * SERVICE: Sentinel-AI Redis Context Management Layer
+ * DESCRIPTION: Handles connection lifecycles, health state checks, dynamic tiering configurations, and token buckets.
+ * STANDARDS: Asynchronous unblocking operations, structural instrumentation logging, atomic script execution pools.
+ */
+
 let redisClient: ReturnType<typeof createClient> | null = null;
+
 export const initRedis = async (): Promise<ReturnType<typeof createClient>> => {
   try {
     redisClient = createClient({ url: env.REDIS_URL });
 
     redisClient
-      .on("error", (err) => console.error("Gateway Redis Error:", err))
-      .on("connect", () => console.log("Sentinel-Gateway: Redis Connected"));
+      .on("error", (err) => logger.error({ err }, "Gateway Redis infrastructure communication link broken"))
+      .on("connect", () => logger.info("Sentinel-Gateway: Redis instance verification initialized"));
 
     await redisClient.connect();
-    redisClient.ping().then(() => console.log("✅ Redis Ping Successful - Connection Verified"));
+    await redisClient.ping();
+    
+    logger.info("Sentinel-Gateway: Redis active heartbeat verified successfully");
     return redisClient;
   } catch (error) {
-    console.error("Redis Connection Failed:", error);
+    logger.fatal({ err: error }, "Redis critical lifecycle initialization failed");
     throw error;
   }
 };
 
-export const getClient = () => {
-  if (!redisClient) throw new Error("Redis not initialized!");
+export const getClient = (): ReturnType<typeof createClient> => {
+  if (!redisClient) {
+    logger.fatal("State Access Violation: Request dispatched before Redis cluster synchronization completion");
+    throw new Error("Redis not initialized!");
+  }
   return redisClient;
 };
 
 export const getExactCache = async (queryHash: string): Promise<string | null> => {
     try {
         const client = getClient();
-        const key = `exact:${queryHash}`;
-        return await client.get(key);
+        return await client.get(`exact:${queryHash}`);
     } catch (error) {
-        console.error("⚠️ Tier-1 Lookup Error:", error);
+        logger.error({ err: error, queryHash }, "Tier-1 storage lookups unhandled system drop");
         return null;
     }
 };
@@ -52,21 +65,17 @@ export const isRateLimited = async (userId: string, limit: number, windowSeconds
 
     return requestCount > limit;
   } catch (error) {
+    logger.error({ err: error, userId }, "Rate limiter computation engine structural failure bypass triggered");
     return false;
   }
 };
+
 export const saveExactCache = async (queryHash: string, response: string): Promise<void> => {
     try {
         const client = getClient();
-        const key = `exact:${queryHash}`;
-
-        await client.set(key, response, {
-            EX: 86400 
-        });
-
-        console.log(`💾 [T1-SAVED] Hash: ${queryHash}`);
+        await client.set(`exact:${queryHash}`, response, { EX: 86400 });
     } catch (error) {
-        console.error("❌ [T1-SAVE-ERROR] Failed to save to Redis:", error);
+        logger.error({ err: error, queryHash }, "Tier-1 write transactional operation aborted");
         throw error;
     }
 };

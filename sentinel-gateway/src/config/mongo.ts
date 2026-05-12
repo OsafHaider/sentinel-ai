@@ -1,9 +1,17 @@
 import { MongoClient, Collection } from 'mongodb';
 import { env } from './env.js';
+import { logger } from './logger.js';
+
+/**
+ * SERVICE: Sentinel-AI MongoDB Connection Layer
+ * DESCRIPTION: Initializes and manages the connection pool to MongoDB for Vector/Knowledge retrieval.
+ * STANDARDS: Singleton instance management, asynchronous state pooling, structured telemetry error propagation.
+ */
 
 let client: MongoClient;
 let knowledgeCollection: Collection;
-export const initMongo = async () => {
+
+export const initMongo = async (): Promise<Collection> => {
     if (knowledgeCollection) return knowledgeCollection;
 
     try {
@@ -11,18 +19,21 @@ export const initMongo = async () => {
         client = new MongoClient(uri);
         
         await client.connect();
-        const db = client.db(env.MONGO_DB_NAME|| "sentinel_db");
+        const db = client.db(env.MONGO_DB_NAME || "sentinel_db");
         knowledgeCollection = db.collection("knowledge_base");
         
-        console.log("✅ Sentinel-Gateway: MongoDB Connected (Hydration Ready)");
+        logger.info("Sentinel-Gateway: MongoDB persistence layer connected successfully");
         return knowledgeCollection;
     } catch (error) {
-        console.error("❌ MongoDB Connection Error:", error);
+        logger.fatal({ err: error }, "MongoDB critical connection handshake failed");
         throw error;
     }
 };
 
-export const getKnowledgeCollection = () => {
-    if (!knowledgeCollection) throw new Error("Mongo not initialized. Call initMongo() first.");
+export const getKnowledgeCollection = (): Collection => {
+    if (!knowledgeCollection) {
+        logger.fatal("State Access Violation: Knowledge collection requested before MongoDB pool initialization");
+        throw new Error("Mongo not initialized. Call initMongo() first.");
+    }
     return knowledgeCollection;
 };

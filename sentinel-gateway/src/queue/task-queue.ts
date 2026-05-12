@@ -1,4 +1,11 @@
 import { Queue } from "bullmq";
+import { logger } from "../config/logger.js";
+
+/**
+ * SERVICE: Sentinel-AI Distributed Task Queuing Engine (BullMQ)
+ * DESCRIPTION: Manages offloading cache misses and bypass requests asynchronously to Python workers.
+ * STANDARDS: Idempotency enforcement, exponential backoff failure handling, transient record trimming policies.
+ */
 
 const connection = {
   host: process.env.REDIS_HOST || '127.0.0.1',
@@ -12,8 +19,8 @@ export const addChatTask = async (data: { query: string; userId: string, jobId: 
     if (bypass) {
         const existingJob = await chatQueue.getJob(data.jobId);
         if (existingJob) {
-            await existingJob.remove()
-            console.log(`🗑️ Removed stale job from queue to force refresh: ${data.jobId}`);
+            await existingJob.remove();
+            logger.info({ jobId: data.jobId }, "Bypass triggered: Evicted existing stale job from distributed queue state");
         }
     }
     const job = await chatQueue.add('process-query', data, {
@@ -32,14 +39,13 @@ export const addChatTask = async (data: { query: string; userId: string, jobId: 
       },
     });
 
-    console.log(`[Sentinel-Queue] Job Queued: ${job.id}`);
     return job;
   } catch (error: any) {
     if (error.message.includes('jobId')) {
-      console.warn(`[Sentinel-Guard] Duplicate job detected: ${data.jobId}. Skipping...`);
+      logger.warn({ jobId: data.jobId }, "Distributed deduplication engine dropped duplicate job request payload");
       return { id: data.jobId, status: 'duplicate' };
     }
-    console.error('[Sentinel-Queue] Critical Error:', error);
+    logger.error({ err: error, jobId: data.jobId }, "Queue broker failed to ingest job submission contract");
     throw error;
   }
 };

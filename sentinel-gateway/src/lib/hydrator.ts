@@ -1,13 +1,18 @@
 import crypto from "crypto";
-import { saveExactCache } from "./redis.js"; // Direct ye function use karein
+import { saveExactCache } from "./redis.js";
 import { getKnowledgeCollection } from "../config/mongo.js";
+import { logger } from "../config/logger.js";
 
-export const runHydration = async () => {
-    const startTime = Date.now();
+/**
+ * SERVICE: Sentinel-AI Cache Hydration Engine
+ * DESCRIPTION: Warmup task that syncs the top 500 latest entries from MongoDB into Redis memory.
+ * OPTIMIZATION: Implements batch aggregation and concurrent Promise pipeline to eliminate blocking I/O.
+ * FAIL-SAFE: Structured exception catching to prevent gateway bootstrap crashes on infrastructure drops.
+ */
+export const runHydration = async (): Promise<void> => {
     try {
         const collection = getKnowledgeCollection();
         
-        // 1. MongoDB se records uthayein
         const records = await collection.find({
             $or: [
                 { query: { $exists: true } },
@@ -19,16 +24,14 @@ export const runHydration = async () => {
         .toArray();
 
         if (records.length === 0) {
-            console.log("💧 [HYDRATOR] No records found in MongoDB to hydrate.");
+            logger.info({ phase: "SENTINEL_MEMORY_HYDRATION" }, "Hydration skipped: No records found in knowledge collection");
             return;
         }
 
-        console.log(`💧 [HYDRATOR] Processing ${records.length} records...`);
+        logger.info({ phase: "SENTINEL_MEMORY_HYDRATION", batchSize: records.length }, "Starting cache hydration batch operation");
 
-        let count = 0;
+        const cachePromises: Promise<void>[] = [];
 
-        // 2. Loop through records and save to Redis one by one
-        // Pipeline ki zaroorat nahi, startup par ye bohot fast hai
         for (const doc of records) {
             const textToHash = doc.query || doc.content;
             const answer = doc.content;
@@ -38,16 +41,30 @@ export const runHydration = async () => {
                     .update(textToHash.toLowerCase().trim())
                     .digest('hex');
 
-                // ✅ Aapka original function use kar raha hoon jo T1 save karta hai
-                await saveExactCache(queryHash, answer);
-                count++;
+                cachePromises.push(saveExactCache(queryHash, answer));
             }
         }
 
-        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.log(`✅ [HYDRATION] Restored ${count} items to Tier-1 in ${duration}s`);
+        if (cachePromises.length > 0) {
+            await Promise.all(cachePromises);
+        }
+
+        logger.info({ 
+            phase: "SENTINEL_MEMORY_HYDRATION", 
+            hydratedCount: cachePromises.length 
+        }, "Sentinel cache warmup completed successfully");
 
     } catch (error) {
-        console.error("🔥 [HYDRATION-FAILED] Error Details:", error);
+        const err = error as Error;
+        
+        logger.error({
+            err: {
+                message: err.message,
+                stack: err.stack,
+                name: err.name
+            },
+            phase: "SENTINEL_MEMORY_HYDRATION",
+            recoveryAction: "Bypassing pre-warmup cache. Gateway will fallback to direct DB/LLM queries."
+        }, "Critical error occurred during Redis memory hydration loop");
     }
 };
