@@ -2,9 +2,9 @@ name: 🛡️ Sentinel-AI System Health Check
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   integration-check:
@@ -25,30 +25,35 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Node.js Gateway Health Check
-      - name: 🟢 Setup Node.js (Gateway)
+      # 1. Node.js Gateway Health Check (Same as before)
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "./sentinel-gateway/package-lock.json"
 
       - name: Install & Build Gateway
         working-directory: ./sentinel-gateway
         run: |
-          npm install --ignore-scripts
+          npm ci
           npm run build
 
-      # 2. Python Worker Health Check
-      - name: 🔵 Setup Python (Worker)
-        uses: actions/setup-python@v5
+      # 2. Python Worker Health Check (Optimized with uv)
+      - name: 🔵 Setup uv (Python Worker)
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.10'
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "./sentinel-worker/uv.lock"
 
-      - name: Install & Check Worker
+      - name: Install & Verify Worker
         working-directory: ./sentinel-worker
         run: |
-          pip install -r requirements.txt
-          python -m compileall src/
+          # uv automatically environment handle kar lega
+          uv sync
+          uv run python -m compileall src/
 
-      # 3. Final Verification Log
+      # 3. Final Verification
       - name: ✅ System Verification
-        run: echo "Sentinel-AI Architecture is sound and deployable!"
+        run: echo "Sentinel-AI Architecture is sound and deployable (uv-powered)!"

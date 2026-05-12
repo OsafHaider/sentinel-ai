@@ -7,6 +7,8 @@ import {
   DollarSign,
   ShieldCheck,
   TrendingUp,
+  BarChart3,
+  ArrowUpRight,
 } from "lucide-react";
 import { Header } from "@/components/header";
 import StatCard from "@/components/stats-card";
@@ -19,173 +21,173 @@ export default function SentinelDashboard() {
     blocks: 0,
     savings: "0.0000",
     files: 0,
+    tokens: 0,
+    spend: "0.0000",
     latency: "0",
     timestamp: "--:--:--",
   });
 
   useEffect(() => {
-    const es = new EventSource(
-      `http://localhost:8008/api/v1/chat/stats/stream`,
-      {
-        withCredentials: true,
-      },
-    );
-
-    console.log("⏳ SSE Connection Attempting...");
+    const es = new EventSource(`http://localhost:8008/api/v1/chat/stats/stream`, {
+      withCredentials: true,
+    });
 
     es.onmessage = (event) => {
       try {
-        console.log("📥 SSE Data Received:", event.data);
         const data = JSON.parse(event.data);
-
         setStats({
           t1: data.t1 || 0,
           t2: data.t2 || 0,
           misses: data.misses || 0,
           blocks: data.blocks || 0,
           savings: data.savings || "0.0000",
-          files: data.files || 0,  
-          latency: data.latency || "0", 
+          files: data.files || 0,
+          tokens: data.tokens || 0,
+          spend: data.spend || "0.0000",
+          latency: data.latency || "0",
           timestamp: data.timestamp || "--:--:--",
         });
       } catch (err) {
-        console.error("❌ Error parsing SSE data:", err);
+        console.error("Error parsing metrics:", err);
       }
     };
 
-    es.onopen = () => {
-      console.log("✅ SSE Connection Established!");
-    };
-
-    es.onerror = (err) => {
-      console.error("❌ SSE Connection Error:", err);
-    };
-
-    return () => {
-      console.log("🔌 Closing SSE Connection");
-      es.close();
-    };
+    return () => es.close();
   }, []);
 
+  // --- Logic Calculations ---
   const totalHits = stats.t1 + stats.t2;
-  const hitRate =
-    totalHits + stats.misses > 0
-      ? ((totalHits / (totalHits + stats.misses)) * 100).toFixed(1)
-      : 0;
+  const totalRequests = totalHits + stats.misses;
+  const hitRate = totalRequests > 0 ? ((totalHits / totalRequests) * 100).toFixed(1) : 0;
+  const netSavings = (parseFloat(stats.savings) - parseFloat(stats.spend)).toFixed(4);
 
+  // Dynamic Latency Tagging
+  const getLatencyTag = (ms:string) => {
+    const time = parseFloat(ms);
+    if (time < 100) return "ULTRA FAST";
+    if (time < 500) return "OPTIMAL";
+    return "CLOUD DELAY";
+  };
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans">
-      {/* Background Accent */}
+    <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-blue-500/30">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl"></div>
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px]"></div>
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-emerald-600/10 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="relative z-10 px-6 md:px-8 py-8">
         <div className="max-w-7xl mx-auto">
-          {/* Header Section */}
-
           <Header />
-          {/* Key Metric - Hit Rate */}
-          <div className="mb-12 bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-3xl p-8 hover:border-blue-500/30 transition-colors duration-300">
-            <div className="flex items-center justify-between">
+
+          {/* Impact Overview Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 flex items-center justify-between group hover:border-blue-500/30 transition-all">
               <div>
-                <p className="text-slate-400 text-sm uppercase tracking-widest mb-2">
-                  Overall Hit Rate
-                </p>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-5xl font-bold text-blue-400">
+                <p className="text-slate-400 text-xs uppercase tracking-[0.2em] mb-3">System Efficiency</p>
+                <div className="flex items-baseline gap-4">
+                  <span className="text-6xl font-black text-transparent bg-clip-text bg-linear-to-r from-blue-400 to-cyan-300">
                     {hitRate}%
                   </span>
-                  <span className="text-emerald-400 text-sm flex items-center gap-1">
-                    <TrendingUp size={16} />
-                    {totalHits} hits this session
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-emerald-400 text-sm font-semibold flex items-center gap-1">
+                      <TrendingUp size={16} /> {totalHits} Queries Cached
+                    </span>
+                    <span className="text-slate-500 text-xs mt-1">Optimization Active</span>
+                  </div>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-slate-500 text-sm">
-                  Tier-1:{" "}
-                  <span className="text-blue-400 font-semibold">
-                    {stats.t1}
-                  </span>
-                </p>
-                <p className="text-slate-500 text-sm">
-                  Tier-2:{" "}
-                  <span className="text-amber-400 font-semibold">
-                    {stats.t2}
-                  </span>
-                </p>
+            </div>
+
+            <div className="bg-linear-to-br from-emerald-500/10 to-blue-500/5 backdrop-blur-xl border border-emerald-500/20 rounded-3xl p-8 flex flex-col justify-center">
+              <div className="flex items-center gap-2 text-emerald-400 mb-2">
+                <ArrowUpRight size={20} />
+                <p className="text-xs uppercase tracking-widest font-bold">Net ROI Generated</p>
               </div>
+              <span className="text-4xl font-mono font-bold text-white tracking-tighter">
+                ${netSavings}
+              </span>
+              <p className="text-slate-500 text-xs mt-2 italic">Calculated: Total Savings - Cloud Spend</p>
             </div>
           </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard
               title="Tier-1 Hits"
-              subtitle="Exact Match Cache"
+              subtitle="Instant Key Cache"
               value={stats.t1}
-              icon={<Zap size={24} />}
+              icon={<Zap size={22} />}
               accentColor="blue"
               tag="FASTEST"
             />
             <StatCard
               title="Tier-2 Hits"
-              subtitle="Semantic Match"
+              subtitle="Semantic Logic"
               value={stats.t2}
-              icon={<Activity size={24} />}
+              icon={<Activity size={22} />}
               accentColor="amber"
-              tag="SMART"
+              tag="INTELLIGENT"
             />
             <StatCard
-              title="LLM Misses"
-              subtitle="Cache Cold Hits"
+              title="Cloud Fallbacks"
+              subtitle="Live LLM Synthesis"
               value={stats.misses}
-              icon={<Database size={24} />}
+              icon={<Database size={22} />}
               accentColor="rose"
               tag="COLD"
             />
             <StatCard
-              title="Guardrail Blocks"
-              subtitle="Content Protected"
+              title="Guardrails"
+              subtitle="Protected Queries"
               value={stats.blocks}
-              icon={<ShieldCheck size={24} />}
+              icon={<ShieldCheck size={22} />}
               accentColor="green"
-              tag="PROTECTED"
+              tag="SECURE"
             />
             <StatCard
-              title="Cost Saved"
-              subtitle="Estimated Savings"
-              value={stats.savings}
-              icon={<DollarSign size={24} />}
+              title="Total Savings"
+              subtitle="Gross Cost Reduction"
+              value={parseFloat(stats.savings).toFixed(4)}
+              icon={<DollarSign size={22} />}
               accentColor="emerald"
-              tag="SAVINGS"
+              tag="REVENUE"
               isCash
             />
-              <StatCard
-              title="Files Ingested"
-              subtitle="Knowledge Base Growth"
-              value={stats.files}
-              icon={<Database size={24} />}
-              accentColor="cyan"
-              tag="INGESTED"
+            <StatCard
+              title="Cloud Expense"
+              subtitle="External API Usage"
+              value={parseFloat(stats.spend).toFixed(4)}
+              icon={<BarChart3 size={22} />}
+              accentColor="rose"
+              tag="BILLING"
+              isCash
             />
-             <StatCard
-              title="Last Latency (ms)"
-              subtitle="Round-trip Time"
-              value={stats.latency}
-              icon={<Activity size={24} />}
+            <StatCard
+              title="Throughput"
+              subtitle="Tokens via Groq"
+              value={stats.tokens.toLocaleString()}
+              icon={<TrendingUp size={22} />}
               accentColor="violet"
-              tag="LATENCY"
-             />
+              tag="TRAFFIC"
+            />
+            <StatCard
+              title="Latency"
+              subtitle="Round-trip Time (ms)"
+              value={stats.latency}
+              icon={<Activity size={22} />}
+              accentColor="violet"
+              tag={getLatencyTag(stats.latency)}
+            />
           </div>
 
-          {/* Footer */}
-          <footer>
-            <p className="text-center text-[10px] text-slate-600 uppercase tracking-widest pt-4">
-              Protected by Sentinel Guardrails • End-to-End Encrypted
+          <footer className="mt-16 border-t border-slate-900 pt-6 flex justify-between items-center px-2">
+            <p className="text-[10px] text-slate-600 uppercase tracking-[0.3em]">
+              Sentinel-AI Metrics Dashboard v1.0 • Stable Release
             </p>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+              <span className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest">Live Engine</span>
+            </div>
           </footer>
         </div>
       </div>

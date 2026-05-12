@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1",
     "langchain>=1.2.18",
     "langchain-groq>=1.1.2",
+    "langchain-ollama>=1.1.0",
     "langchain-text-splitters>=1.1.2",
     "pymongo>=4.17.0",
     "pymupdf>=1.27.2.3",
