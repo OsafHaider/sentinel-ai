@@ -35,6 +35,7 @@ jobs:
       - name: Install & Build Gateway
         working-directory: ./sentinel-gateway
         run: |
+          export HUSKY_GIT_DIR=../.git
           npm ci
           npm run build
 
