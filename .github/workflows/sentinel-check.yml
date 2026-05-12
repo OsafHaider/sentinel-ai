@@ -1,4 +1,4 @@
-name: 🛡️ Sentinel-AI System Health Check
+name: Sentinel-AI System Health Check
 
 on:
   push:
@@ -25,8 +25,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Node.js Gateway Health Check (Same as before)
-      - name: 🟢 Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -39,8 +38,7 @@ jobs:
           npm ci
           npm run build
 
-      # 2. Python Worker Health Check (Optimized with uv)
-      - name: 🔵 Setup uv (Python Worker)
+      - name: Setup uv (Python Worker)
         uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
@@ -55,5 +53,5 @@ jobs:
           uv run python -m compileall src/
 
       # 3. Final Verification
-      - name: ✅ System Verification
+      - name: System Verification
         run: echo "Sentinel-AI Architecture is sound and deployable (uv-powered)!"
