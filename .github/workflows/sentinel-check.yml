@@ -34,8 +34,10 @@ jobs:
 
       - name: Install & Build Gateway
         working-directory: ./sentinel-gateway
+        env:
+          ADOT_SKIP_PREPARE: 1 # Standard skip flag
+          HUSKY: 0             # Husky ko disable karne ka sabse asaan tareeqa
         run: |
-          export HUSKY_GIT_DIR=../.git
           npm ci
           npm run build
 
