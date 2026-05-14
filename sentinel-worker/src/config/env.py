@@ -19,4 +19,5 @@ class Config:
     MONGO_URI = get_env_variable("MONGO_URI")
     MONGO_DB_NAME = get_env_variable("MONGO_DB_NAME")
     GATEWAY_URL = get_env_variable("GATEWAY_URL")
+    TAVILY_API_KEY=get_env_variable("TAVILY_API_KEY")
 env = Config()

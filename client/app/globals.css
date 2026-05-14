@@ -22,4 +22,12 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+body::-webkit-scrollbar {
+  display: none;
+}
+#chat-screen::-webkit-scrollbar{
+  display: none;
 }

@@ -1,3 +1,4 @@
+"use client";
 const StatCard = ({
   title,
   subtitle,

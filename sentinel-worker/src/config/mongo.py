@@ -1,24 +1,21 @@
-from pymongo import MongoClient
-from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
 from src.config.env import get_env_variable
 from src.config.logger import logger
 
-load_dotenv()
-
 """
-SERVICE: Sentinel-AI Vector Storage & Knowledge Layer (MongoDB)
-DESCRIPTION: Handles transactional ingestions and high-performance pipeline aggregation mappings.
-STANDARDS: Synchronous initialization pools, semantic score compliance tracking, structured traceback containment.
+SERVICE: Sentinel-AI Vector Storage & Knowledge Layer (MongoDB Asyncio)
+DESCRIPTION: Handles non-blocking transactional database operations using Motor async engines.
+BUSINESS_VALUATION: Eradicates Event Loop starvation across worker threads during heavy storage aggregations.
 """
 
-client = MongoClient(get_env_variable("MONGO_URI"))
+client = AsyncIOMotorClient(get_env_variable("MONGO_URI"))
 db = client[get_env_variable("MONGO_DB_NAME")]
 collection = db["knowledge_base"]
 
 
-def insert_knowledge(data: dict):
+async def insert_knowledge(data: dict):
     try:
-        result = collection.insert_one(data)
+        result = await collection.insert_one(data)
         return result.inserted_id
     except Exception as e:
         logger.error(
@@ -28,7 +25,7 @@ def insert_knowledge(data: dict):
         return None
 
 
-def get_context(query_vector: list):
+async def get_context(query_vector: list):
     pipeline = [
         {
             "$vectorSearch": {
@@ -41,17 +38,47 @@ def get_context(query_vector: list):
         },
         {"$project": {"content": 1, "score": {"$meta": "vectorSearchScore"}}},
     ]
-
     try:
-        results = list(collection.aggregate(pipeline))
+        results = []
+        async for doc in collection.aggregate(pipeline):
+            results.append(doc)
         context_parts = [
             doc["content"] for doc in results if doc.get("score", 0) > 0.75
         ]
-
         return "\n".join(context_parts) if context_parts else None
     except Exception as e:
         logger.error(
             "MongoDB semantic vectorSearch aggregation path broken",
             {"err": {"message": str(e), "type": type(e).__name__}},
+        )
+        return None
+
+
+# src/config/mongo.py ke andar add karein left-aligned format mein:
+
+
+async def get_exact_query_document(query_text: str):
+    """
+    Fallback direct lookup scan to recover documents when spatial vector searches drop thresholds.
+    """
+    try:
+        # 🛡️ FIX: Normalise input text parameter to align with data ingestion formats
+        clean_key = query_text.lower().strip()
+
+        record = await collection.find_one({"query": clean_key})
+        if record and "content" in record:
+            return record["content"]
+
+        # Case-insensitive validation regex scan fallback mapping fields
+        record_insensitive = await collection.find_one(
+            {"query": {"$regex": f"^{clean_key}$", "$options": "i"}}
+        )
+        if record_insensitive and "content" in record_insensitive:
+            return record_insensitive["content"]
+
+        return None
+    except Exception as e:
+        logger.error(
+            "Fallback exact query document string parsing failed", {"err": str(e)}
         )
         return None

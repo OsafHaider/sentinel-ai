@@ -1,18 +1,14 @@
 import asyncio
 from bullmq import Worker
-from dotenv import load_dotenv
-from src.engine.processor import handle_task
-from src.config.redis import client
+from src.services.query_worker.processor import handle_task
+from src.config.redis import client, ensure_semantic_index
 from src.config.env import get_env_variable
 from src.config.logger import logger
-from src.engine.researcher import run_discovery_cycle
-
-load_dotenv()
 
 """
 SERVICE: Sentinel-AI Core Asynchronous Query Worker
 DESCRIPTION: Subscribes to the BullMQ Redis queue cluster and orchestrates background jobs.
-STANDARDS: Global telemetry injection, absolute resource pool cleanup, strict task decoupling.
+BUSINESS_VALUATION: Integrates non-blocking vector storage verification cycles directly into core daemon initialization paths.
 """
 
 REDIS_URL = get_env_variable("REDIS_URL")
@@ -20,29 +16,29 @@ REDIS_URL = get_env_variable("REDIS_URL")
 
 async def main() -> None:
     worker_settings = {"connection": REDIS_URL}
-
-    # Registering BullMQ background worker link
-    worker = Worker("chat-tasks", handle_task, worker_settings)
-
+    worker = None
     try:
+        logger.info(
+            "Sentinel Worker context initializing storage infrastructure indexes"
+        )
+        await ensure_semantic_index()
+
+        worker = Worker("chat-tasks", handle_task, worker_settings)
         logger.info(
             "Sentinel Worker context successfully mounted to task router pipeline"
         )
-
-        # 🔥 Maza: Background Discovery Engine ko start karein (Concurrency)
-        # Ye loop background mein chalta rahega aur queries handle karne wale thread ko block nahi karega
-        asyncio.create_task(run_discovery_cycle())
         logger.info("Sentinel Discovery Engine: Online and monitoring knowledge gaps")
 
-        # Main worker loop starts here
-        await worker.run()
-
+        while True:
+            await asyncio.sleep(1)
     except Exception as e:
         logger.fatal(
             "Critical fault interface shutdown on task orchestration stream",
             {"err": {"message": str(e), "type": type(e).__name__}},
         )
     finally:
+        if worker is not None:
+            await worker.close()
         await client.disconnect()
         logger.info(
             "Distributed telemetry and storage infrastructure instances closed safely"

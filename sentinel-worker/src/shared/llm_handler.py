@@ -7,7 +7,7 @@ from src.config.logger import logger
 """
 SERVICE: Sentinel-AI LLM Generation Engine
 DESCRIPTION: Interface layer for Groq Cloud inference, prompt hydration, and automated token metric extraction.
-STANDARDS: Zero processing latency loops, programmatic exception containment, structural telemetry outputting.
+BUSINESS_VALUATION: Eliminates structural runtime re-compilation delays using isolated global execution blocks.
 """
 
 cloud_llm = ChatGroq(
@@ -15,7 +15,6 @@ cloud_llm = ChatGroq(
     model="llama-3.1-8b-instant",
     temperature=0.1,
 )
-
 private_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -30,7 +29,6 @@ private_prompt = ChatPromptTemplate.from_messages(
         ("user", "Context:\n{context}\n\nQuestion: {query}"),
     ]
 )
-
 generic_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -40,22 +38,21 @@ generic_prompt = ChatPromptTemplate.from_messages(
         ("user", "{query}"),
     ]
 )
+private_chain = private_prompt | cloud_llm
+generic_chain = generic_prompt | cloud_llm
 
 
 async def generate_response(
     query: str, context: Optional[str] = None, mode: str = "generic"
 ) -> Dict[str, Any]:
-    active_prompt = private_prompt if mode == "private" else generic_prompt
-    payload = (
-        {"context": context, "query": query} if mode == "private" else {"query": query}
-    )
-
     try:
-        cloud_chain = active_prompt | cloud_llm
-        response = await cloud_chain.ainvoke(payload)
-
+        if mode == "private":
+            payload = {"context": context, "query": query}
+            response = await private_chain.ainvoke(payload)
+        else:
+            payload = {"query": query}
+            response = await generic_chain.ainvoke(payload)
         usage = response.response_metadata.get("token_usage", {})
-
         return {
             "text": response.content,
             "source": "cloud",
@@ -70,11 +67,18 @@ async def generate_response(
             "Groq upstream inference cloud network loop collapsed",
             {
                 "mode": mode,
-                "err": {"message": str(cloud_err), "type": type(cloud_err).__name__},
+                "err": {
+                    "message": str(cloud_err),
+                    "type": type(cloud_err).__name__,
+                },
             },
         )
         return {
             "text": "Sorry, the cloud intelligence system is currently experiencing technical difficulties.",
             "source": "error",
-            "usage": {},
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
         }
