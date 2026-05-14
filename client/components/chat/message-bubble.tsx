@@ -33,7 +33,7 @@ export function MessageBubble({ role, content, isLoading }: MessageBubbleProps) 
       <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
           isUser 
-            ? "bg-blue-600/10 border-blue-500/30" 
+            ? "bg-blue-300/10 border-blue-500/30" 
             : "bg-slate-800 border-slate-700"
         }`}>
           {isUser ? (

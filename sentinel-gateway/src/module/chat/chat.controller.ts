@@ -9,11 +9,13 @@ import { addIngestTask } from "../../queue/add-ingest-task.js";
 import { ApiError } from "../../utils/api-error.js";
 import { generateQueryHash } from "../../utils/hash.js";
 import { performance } from "perf_hooks";
+import { getKnowledgeCollection } from "../../config/mongo.js";
 export const chatController = {
   // Chunk 1: Main Query Processing Interface
   handleChat: async (request: FastifyRequest, reply: FastifyReply) => {
     const start = performance.now();
     const { query, bypassCache } = request.body as any;
+    console.log(query,"query from nodeway gate handlechat: Query is enter")
     const userId = request.ip || "unknown-ip";
     const client = getClient();
 
@@ -22,13 +24,17 @@ export const chatController = {
     const queryHash = generateQueryHash(query);
     const jobId = `query-${queryHash}`;
 
-    request.log.info({ userId, jobId, bypassCache }, "Incoming chat request initialized");
+    request.log.info(
+      { userId, jobId, bypassCache },
+      "Incoming chat request initialized",
+    );
 
     if (!bypassCache) {
       const exactMatch = await getExactCache(queryHash);
       if (exactMatch) {
+        console.log(exactMatch,"tier-1 hit! from node gateway handle-chat: Query string exact match!")
         const latency = (performance.now() - start).toFixed(2);
-        
+
         await Promise.all([
           client.incr("stats:t1_hits"),
           client.incrByFloat("stats:dollars_saved", 0.025),
@@ -36,9 +42,12 @@ export const chatController = {
         ]);
 
         sentinelEmitter.emit("stats-update");
-        
-        request.log.info({ jobId, latency, hitType: "T1_EXACT" }, "Cache hit served successfully");
-        
+
+        request.log.info(
+          { jobId, latency, hitType: "T1_EXACT" },
+          "Cache hit served successfully",
+        );
+
         return reply.send({
           status: "completed",
           response: exactMatch,
@@ -48,10 +57,13 @@ export const chatController = {
     }
 
     await client.set(`start_time:${jobId}`, start.toString(), { EX: 3600 });
-
+ console.log("tier-1 miss! from node gateway handle-chat: Query string not exact match!")
     const job = await addChatTask({ query, userId, jobId }, bypassCache);
 
-    request.log.info({ jobId, jobIdWorker: job.id }, "Cache miss: Request queued to Python worker");
+    request.log.info(
+      { jobId, jobIdWorker: job.id },
+      "Cache miss: Request queued to Python worker",
+    );
 
     return reply.status(202).send({
       status: "queued",
@@ -66,7 +78,7 @@ export const chatController = {
     if (!data) throw new ApiError(400, "No file uploaded");
 
     const uploadDir = path.join(process.cwd(), "uploads");
-    
+
     // Non-blocking asynchronous folder structure checks
     try {
       await fs.promises.access(uploadDir);
@@ -76,7 +88,10 @@ export const chatController = {
 
     const filePath = path.join(uploadDir, `${Date.now()}-${data.filename}`);
 
-    request.log.info({ fileName: data.filename }, "Knowledge base file uploading started");
+    request.log.info(
+      { fileName: data.filename },
+      "Knowledge base file uploading started",
+    );
 
     await pipeline(data.file, fs.createWriteStream(filePath));
 
@@ -85,7 +100,10 @@ export const chatController = {
       fileName: data.filename,
     });
 
-    request.log.info({ jobId: job.id, fileName: data.filename }, "Ingestion upload completed and task emitted to scheduler");
+    request.log.info(
+      { jobId: job.id, fileName: data.filename },
+      "Ingestion upload completed and task emitted to scheduler",
+    );
 
     return reply.send({
       status: "processing",
@@ -94,77 +112,98 @@ export const chatController = {
     });
   },
 
-   // Chunk 3: Real-time Live Dashboard Analytics Engine (SSE)
-  statsStream: async (request: FastifyRequest, reply: FastifyReply) => {
+  // Chunk 3: Real-time Live Dashboard Analytics Engine (SSE)
+ statsStream: async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      reply.hijack();
-      const rawRes = reply.raw;
-      const client = getClient();
+        reply.hijack();
+        const rawRes = reply.raw;
+        const client = getClient();
+        const mongoCollection = getKnowledgeCollection(); // MongoDB collection access
 
-      rawRes.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Access-Control-Allow-Origin": "http://localhost:3000",
-        "Access-Control-Allow-Credentials": "true",
-      });
+        rawRes.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+            "Access-Control-Allow-Origin": "http://localhost:3000",
+            "Access-Control-Allow-Credentials": "true",
+        });
 
-      const sendStats = async (): Promise<void> => {
-        try {
-          const [t1, t2, misses, saved, blocks, files, latency, tokens, spend, source] = await Promise.all([
-    client.get("stats:t1_hits"),
-    client.get("stats:t2_hits"),
-    client.get("stats:llm_calls"),
-    client.get("stats:dollars_saved"),
-    client.get("stats:guardrail_blocks"),
-    client.get("stats:ingested_files"),
-    client.get("stats:last_latency"),
-    client.get("stats:total_tokens"),
-    client.get("stats:actual_spend"),
-    client.get("stats:last_source"),
-  ]);
+        const sendStats = async (): Promise<void> => {
+            try {
+                // 1. Redis aur MongoDB se parallel data uthayein
+                const [
+                    t1, t2, misses, saved, blocks, files, 
+                    latency, tokens, spend, source,
+                    pendingGaps,        // Redis list length (To-do)
+                    autonomousCount     // MongoDB doc count (Learned)
+                ] = await Promise.all([
+                    client.get("stats:t1_hits"),
+                    client.get("stats:t2_hits"),
+                    client.get("stats:llm_calls"),
+                    client.get("stats:dollars_saved"),
+                    client.get("stats:guardrail_blocks"),
+                    client.get("stats:ingested_files"),
+                    client.get("stats:last_latency"),
+                    client.get("stats:total_tokens"),
+                    client.get("stats:actual_spend"),
+                    client.get("stats:last_source"),
+                    client.lLen("sentinel:knowledge_gaps"), // Pending Research count
+                    mongoCollection.countDocuments({ source: "sentinel-discovery-engine" }) // Successfully learned
+                ]);
 
-         rawRes.write(
-    `data: ${JSON.stringify({
-      t1: parseInt(t1 || "0"),
-      t2: parseInt(t2 || "0"),
-      misses: parseInt(misses || "0"),
-      savings: parseFloat(saved || "0").toFixed(4), // Dashboard precision match
-      blocks: parseInt(blocks || "0"),
-      files: parseInt(files || "0"),
-      latency: latency || "0.00",
-      tokens: parseInt(tokens || "0"), // Ensure tokens are sent as numbers
-      spend: parseFloat(spend || "0").toFixed(6), // Actual billing data
-      source: source || "cloud",
-      timestamp: new Date().toLocaleTimeString(),
-    })}\n\n`,
-  );
-        } catch (streamWriteError) {
-          request.log.error({ err: streamWriteError }, "Analytics stream calculation data layer fetching dropped");
-        }
-      };
+                // 2. Data stream karein dashboard ki taraf
+                rawRes.write(
+                    `data: ${JSON.stringify({
+                        t1: parseInt(t1 || "0"),
+                        t2: parseInt(t2 || "0"),
+                        misses: parseInt(misses || "0"),
+                        savings: parseFloat(saved || "0").toFixed(4),
+                        blocks: parseInt(blocks || "0"),
+                        files: parseInt(files || "0"),
+                        latency: latency || "0.00",
+                        tokens: parseInt(tokens || "0"),
+                        spend: parseFloat(spend || "0").toFixed(6),
+                        source: source || "cloud",
+                        pending_research: pendingGaps || 0,
+                        autonomous_learned: autonomousCount || 0,
+                        timestamp: new Date().toLocaleTimeString(),
+                    })}\n\n`,
+                );
+            } catch (streamWriteError) {
+                request.log.error(
+                    { err: streamWriteError },
+                    "Analytics stream calculation data layer fetching dropped",
+                );
+            }
+        };
 
-      const onIngestFinished = (data: any): void => {
-        rawRes.write(`event: notification\n`);
-        rawRes.write(`data: ${JSON.stringify(data)}\n\n`);
-      };
+        const onIngestFinished = (data: any): void => {
+            rawRes.write(`event: notification\n`);
+            rawRes.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
 
-      await sendStats();
+        await sendStats();
 
-      const onUpdate = (): void => { void sendStats(); };
-      sentinelEmitter.on("stats-update", onUpdate);
-      sentinelEmitter.on("ingest-finished", onIngestFinished);
+        const onUpdate = (): void => {
+            void sendStats();
+        };
+        sentinelEmitter.on("stats-update", onUpdate);
+        sentinelEmitter.on("ingest-finished", onIngestFinished);
 
-      request.raw.on("close", () => {
-        sentinelEmitter.off("stats-update", onUpdate);
-        sentinelEmitter.off("ingest-finished", onIngestFinished);
-        rawRes.end();
-      });
+        request.raw.on("close", () => {
+            sentinelEmitter.off("stats-update", onUpdate);
+            sentinelEmitter.off("ingest-finished", onIngestFinished);
+            rawRes.end();
+        });
     } catch (error) {
-      request.log.error({ err: error }, "Dashboard SSE connection interface failure");
-      throw error;
+        request.log.error(
+            { err: error },
+            "Dashboard SSE connection interface failure",
+        );
+        throw error;
     }
-  },
+},
+
 
   // Chunk 4: Asynchronous Client Long-poll Listener Interface (SSE Response Mapping)
   streamChat: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -178,7 +217,7 @@ export const chatController = {
       rawRes.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
         "Access-Control-Allow-Origin": "http://localhost:3000",
         "Access-Control-Allow-Credentials": "true",
       });
@@ -199,7 +238,10 @@ export const chatController = {
         sentinelEmitter.off(eventName, onMessage);
       });
     } catch (error) {
-      request.log.error({ err: error, jobId: (request.params as any)?.jobId }, "Job stream listener pipeline crashed");
+      request.log.error(
+        { err: error, jobId: (request.params as any)?.jobId },
+        "Job stream listener pipeline crashed",
+      );
       throw error;
     }
   },
@@ -216,9 +258,10 @@ export const chatController = {
       is_knowledge_miss,
       usage,
     } = request.body as any;
-
+console.log(query,"from webhook")
     const client = getClient();
-    if (status !== "completed") throw new ApiError(400, "Invalid webhook status");
+    if (status !== "completed")
+      throw new ApiError(400, "Invalid webhook status");
 
     // 🛡️ IDEMPOTENCY LOCK
     const lockKey = `processed:${jobId}`;
@@ -248,11 +291,17 @@ export const chatController = {
 
     await client.set("stats:last_source", finalSource);
 
-    const evaluationMetrics: Record<string, any> = { jobId, finalSource, totalLatency };
+    const evaluationMetrics: Record<string, any> = {
+      jobId,
+      finalSource,
+      totalLatency,
+    };
 
     // --- 📊 STATS & COST LOGIC (Cloud Optimized) ---
     if (is_knowledge_miss === true) {
       await client.incr("stats:guardrail_blocks");
+      await client.lPush("sentinel:knowledge_gaps", query);
+      await client.lTrim("sentinel:knowledge_gaps", 0, 49);
       evaluationMetrics.outcome = "GUARDRAIL_BLOCKED";
     } else if (is_semantic === true) {
       await Promise.all([
@@ -283,25 +332,35 @@ export const chatController = {
       }
     }
 
-    request.log.info(evaluationMetrics, "Sentinel execution lifecycle completed");
+    request.log.info(
+      evaluationMetrics,
+      "Sentinel execution lifecycle completed",
+    );
 
     sentinelEmitter.emit("stats-update");
-    sentinelEmitter.emit(`job-done:${jobId}`, { jobId, response, status: "completed" });
+    sentinelEmitter.emit(`job-done:${jobId}`, {
+      jobId,
+      response,
+      status: "completed",
+    });
 
     return reply.status(200).send({ status: "success" });
   },
-
 
   // Chunk 6: Knowledge Base Synchronization Callback Pipeline
   handleIngestWebhook: async (request: FastifyRequest, reply: FastifyReply) => {
     const { fileName, status, message } = request.body as any;
     const client = getClient();
 
-    if (status !== "completed") throw new ApiError(400, "Invalid ingest webhook status");
+    if (status !== "completed")
+      throw new ApiError(400, "Invalid ingest webhook status");
 
     await client.incr("stats:ingested_files");
 
-    request.log.info({ fileName }, "Vector state transformation synced to gateway database store");
+    request.log.info(
+      { fileName },
+      "Vector state transformation synced to gateway database store",
+    );
 
     sentinelEmitter.emit("stats-update");
     sentinelEmitter.emit("ingest-finished", {
@@ -311,5 +370,4 @@ export const chatController = {
 
     return reply.status(200).send({ status: "received" });
   },
-
 };

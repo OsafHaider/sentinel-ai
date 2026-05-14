@@ -70,7 +70,7 @@ export function ChatInput({
         </form>
 
         <p className="text-center text-[10px] text-slate-600 uppercase tracking-widest pt-4">
-          Protected by Sentinel Guardrails • End-to-End Encrypted
+          Powered by Sentinel AI - Your Ultimate LLM Optimization Assistant
         </p>
       </div>
     </div>
